@@ -1,16 +1,8 @@
 # FireConnect (Go)
 
-Single static binary that routes **Claude Code**, **Cursor**, and **Codex/ChatGPT** through the [Fireworks AI](https://fireworks.ai/) inference gateway. Drop-in replacement for the upstream Node.js `fireconnect` CLI — no npm, no native C++ addons, no runtime dependencies.
+Single go binary that routes **Claude Code**, **Cursor**, and **Codex/ChatGPT** through the [Fireworks AI](https://fireworks.ai/) inference gateway. Drop-in replacement for the upstream Node.js `fireconnect` CLI — no npm, no native C++ addons, no runtime dependencies.
 
-## Why rewrite?
-
-| Node.js (upstream)                     | Go (this repo)                          |
-|----------------------------------------|-----------------------------------------|
-| npm + `cross-keychain` (C++ bindings)  | single static binary, zero runtime deps |
-| requires Node.js 18+                   | runs anywhere — just copy the binary    |
-| `node_modules/` tree                   | `go build` → one file                   |
-
-Functional parity: same CLI flags, same config file formats, same harness on/off/status behavior.
+<img width="1842" height="826" alt="image" src="https://github.com/user-attachments/assets/2143d618-2c0b-42d4-85de-d78398ab407d" />
 
 ## Setup guide
 
