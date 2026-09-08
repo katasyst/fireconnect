@@ -266,15 +266,18 @@ func hasFireworksProvider(doc map[string]interface{}) bool {
 
 var (
 	rootModelLine     = regexp.MustCompile(`(?m)^model\s*=.*$`)
+	rootWebSearchLine = regexp.MustCompile(`(?m)^web_search\s*=.*$`)
 	providerTableLine = regexp.MustCompile(`(?m)^\[provider\.fireworks-model-catalog\]\s*$`)
 )
 
 func patchCodexConfig(raw, model, apiKeyValue string) string {
 	stripped := stripFireconnectSection(raw)
 	stripped = rootModelLine.ReplaceAllString(stripped, "")
+	stripped = rootWebSearchLine.ReplaceAllString(stripped, "")
 
 	block := strings.Join([]string{
 		fmt.Sprintf(`model = %q`, model),
+		`web_search = "disabled"`,
 		"",
 		providerHeader,
 		`name = "fireworks-model-catalog"`,
