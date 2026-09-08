@@ -6,40 +6,35 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/zalando/go-keyring"
 )
 
-const (
-	serviceName  = "FireworksAI"
-	accountName  = "fireworks-api-key"
-	apiKeyRelPath = ".fireconnect/.api-key"
-)
+const apiKeyRelPath = ".fireconnect/.api-key"
 
-// PlaintextSecretPath returns the fallback plaintext API key path for home.
+// PlaintextSecretPath returns the API key file path.
 func PlaintextSecretPath(home string) string {
 	return filepath.Join(home, apiKeyRelPath)
 }
 
-// GetSecret reads the Fireworks API key from the OS keyring, falling back to the plaintext file.
+// GetSecret reads the Fireworks API key from ~/.fireconnect/.api-key.
 func GetSecret(home string) (string, error) {
 	if home = strings.TrimSpace(home); home == "" {
 		return "", errors.New("HOME is not set; cannot read stored API key")
 	}
-
-	secret, err := keyring.Get(serviceName, accountName)
-	if err == nil {
-		if trimmed := strings.TrimSpace(secret); trimmed != "" {
-			return trimmed, nil
+	data, err := os.ReadFile(PlaintextSecretPath(home))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", errors.New("not signed in")
 		}
-	} else if !errors.Is(err, keyring.ErrNotFound) {
-		// Fall through to plaintext fallback on keyring errors.
+		return "", err
 	}
-
-	return readPlaintextSecret(home)
+	trimmed := strings.TrimSpace(string(data))
+	if trimmed == "" {
+		return "", errors.New("not signed in")
+	}
+	return trimmed, nil
 }
 
-// SetSecret stores the Fireworks API key in the OS keyring, falling back to the plaintext file.
+// SetSecret writes the Fireworks API key to ~/.fireconnect/.api-key (mode 0600).
 func SetSecret(home, value string) error {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
@@ -48,62 +43,27 @@ func SetSecret(home, value string) error {
 	if home = strings.TrimSpace(home); home == "" {
 		return errors.New("HOME is not set; cannot store API key")
 	}
-
-	if err := keyring.Set(serviceName, accountName, trimmed); err == nil {
-		return nil
+	path := PlaintextSecretPath(home)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("create config directory: %w", err)
 	}
-
-	return writePlaintextSecret(home, trimmed)
+	return os.WriteFile(path, []byte(trimmed+"\n"), 0o600)
 }
 
-// DeleteSecret removes the Fireworks API key from the keyring and plaintext fallback.
+// DeleteSecret removes the API key file.
 func DeleteSecret(home string) error {
-	_ = keyring.Delete(serviceName, accountName)
-
 	if home = strings.TrimSpace(home); home == "" {
 		return nil
 	}
-	path := PlaintextSecretPath(home)
-	err := os.Remove(path)
+	err := os.Remove(PlaintextSecretPath(home))
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	return nil
 }
 
-// HasSecret reports whether a Fireworks API key is stored.
+// HasSecret reports whether an API key file exists and is non-empty.
 func HasSecret(home string) bool {
-	if home = strings.TrimSpace(home); home == "" {
-		return false
-	}
-	if secret, err := keyring.Get(serviceName, accountName); err == nil && strings.TrimSpace(secret) != "" {
-		return true
-	}
-	secret, err := readPlaintextSecret(home)
+	secret, err := GetSecret(home)
 	return err == nil && secret != ""
-}
-
-func readPlaintextSecret(home string) (string, error) {
-	path := PlaintextSecretPath(home)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return "", keyring.ErrNotFound
-		}
-		return "", err
-	}
-	trimmed := strings.TrimSpace(string(data))
-	if trimmed == "" {
-		return "", keyring.ErrNotFound
-	}
-	return trimmed, nil
-}
-
-func writePlaintextSecret(home, value string) error {
-	path := PlaintextSecretPath(home)
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("create secret directory: %w", err)
-	}
-	content := []byte(value + "\n")
-	return os.WriteFile(path, content, 0o600)
 }
