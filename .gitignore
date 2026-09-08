@@ -1,7 +1,7 @@
-# Binary
-fireconnect
-fireconnect.exe
-fireconnect-*
+# Binary (root only, not cmd/fireconnect/ directory)
+/fireconnect
+/fireconnect.exe
+/fireconnect-*
 
 # Go
 *.test
