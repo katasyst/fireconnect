@@ -28,6 +28,8 @@ func RunGlobalCommand(cmd *GlobalCommand, ctx *HarnessContext) error {
 		return runLogout(ctx)
 	case "status":
 		return runStatus(ctx)
+	case "model-list":
+		return runModelList(ctx)
 	default:
 		return fmt.Errorf("unknown global command: %s", cmd.Command)
 	}
@@ -96,6 +98,47 @@ func runStatus(ctx *HarnessContext) error {
 	return fmt.Errorf("not signed in")
 }
 
+func runModelList(ctx *HarnessContext) error {
+	apiKey := ctx.APIKey
+	if !ctx.APIKeyFromFlag {
+		if secret, err := keychain.GetSecret(ctx.Home); err == nil {
+			apiKey = secret
+		}
+	}
+	if err := fireworks.ValidateCatalogAPIKey(apiKey); err != nil {
+		return err
+	}
+
+	entries, err := fireworks.FetchCatalog(apiKey, ctx.Home, ctx.Refresh)
+	if err != nil {
+		return err
+	}
+
+	filtered := fireworks.FilterCatalog(entries, ctx.Search)
+
+	if ctx.JSON {
+		payload := map[string]interface{}{
+			"count":  len(filtered),
+			"models": filtered,
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(payload)
+	}
+
+	fmt.Println(fireworks.FormatCatalogTable(filtered))
+	count := len(filtered)
+	ui.Note(fmt.Sprintf("%d model%s · Refresh: fireconnect model list --refresh", count, plural(count)))
+	return nil
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
 func printHelp(topic string) {
 	switch topic {
 	case "claude", "cursor", "codex", "chatgpt":
@@ -147,6 +190,7 @@ Per harness:
   <harness> status     Show provider, auth, and models
 
 Other:
+  model list           Browse Fireworks model catalog
   status               Sign-in state and key storage
   help                 Full command reference
   help <harness>       All options for one harness
@@ -159,6 +203,8 @@ Global options:
   --json               Machine-readable JSON output
   --force              Force writes while IDE is running
   --azure              Use Azure/Foundry provider
+  --search <query>     Filter model list by name or ID
+  --refresh            Force-refresh cached model catalog
   --version            Show version
 `)
 	}

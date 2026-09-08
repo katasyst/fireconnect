@@ -63,7 +63,7 @@ func (h *claudeHarness) On(ctx *cli.HarnessContext) error {
 	settings["env"] = env
 
 	if ctx.Main != "" {
-		settings["model"] = fireworks.ShortFireworksModelRef(fireworks.NormalizeModelID(ctx.Main))
+		settings["model"] = fireworks.WithContextTag(fireworks.ShortFireworksModelRef(fireworks.NormalizeModelID(ctx.Main)))
 	}
 
 	if err := fileutil.WriteJSONFile(settingsPath, settings, 0o600); err != nil {
@@ -242,16 +242,16 @@ func providerFromEnv(env map[string]string) string {
 
 func mappingFromEnv(env map[string]string, settings map[string]interface{}) map[string]string {
 	mapping := map[string]string{
-		"opus":   env["ANTHROPIC_DEFAULT_OPUS_MODEL"],
-		"sonnet": env["ANTHROPIC_DEFAULT_SONNET_MODEL"],
-		"haiku":  env["ANTHROPIC_DEFAULT_HAIKU_MODEL"],
-		"fable":  env["ANTHROPIC_DEFAULT_FABLE_MODEL"],
+		"opus":   fireworks.StripContextTag(env["ANTHROPIC_DEFAULT_OPUS_MODEL"]),
+		"sonnet": fireworks.StripContextTag(env["ANTHROPIC_DEFAULT_SONNET_MODEL"]),
+		"haiku":  fireworks.StripContextTag(env["ANTHROPIC_DEFAULT_HAIKU_MODEL"]),
+		"fable":  fireworks.StripContextTag(env["ANTHROPIC_DEFAULT_FABLE_MODEL"]),
 	}
 	if v := env["CLAUDE_CODE_SUBAGENT_MODEL"]; v != "" {
-		mapping["subagent"] = v
+		mapping["subagent"] = fireworks.StripContextTag(v)
 	}
 	if model, ok := settings["model"].(string); ok && model != "" {
-		mapping["main"] = model
+		mapping["main"] = fireworks.StripContextTag(model)
 	}
 	return mapping
 }
@@ -294,10 +294,10 @@ func buildFireworksEnv(apiKey string, mapping map[string]string, ctx *cli.Harnes
 		"ANTHROPIC_BASE_URL":                          fireworks.FireworksBaseURL,
 		"ANTHROPIC_API_KEY":                           anthropicAPISentinel,
 		"ANTHROPIC_CUSTOM_HEADERS":                    fmt.Sprintf("X-Fireworks-Api-Key: %s", apiKey),
-		"ANTHROPIC_DEFAULT_OPUS_MODEL":                mapping["opus"],
-		"ANTHROPIC_DEFAULT_SONNET_MODEL":              mapping["sonnet"],
-		"ANTHROPIC_DEFAULT_HAIKU_MODEL":               mapping["haiku"],
-		"ANTHROPIC_DEFAULT_FABLE_MODEL":               mapping["fable"],
+		"ANTHROPIC_DEFAULT_OPUS_MODEL":                fireworks.WithContextTag(mapping["opus"]),
+		"ANTHROPIC_DEFAULT_SONNET_MODEL":              fireworks.WithContextTag(mapping["sonnet"]),
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL":               fireworks.WithContextTag(mapping["haiku"]),
+		"ANTHROPIC_DEFAULT_FABLE_MODEL":               fireworks.WithContextTag(mapping["fable"]),
 		"CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING":       "1",
 		"CLAUDE_CODE_PACKAGE_MANAGER_AUTO_UPDATE":     "0",
 		"DISABLE_TELEMETRY":                           "1",
@@ -306,7 +306,7 @@ func buildFireworksEnv(apiKey string, mapping map[string]string, ctx *cli.Harnes
 		"ENABLE_TOOL_SEARCH":                          "true",
 	}
 	if subagent, ok := mapping["subagent"]; ok && subagent != "" {
-		env["CLAUDE_CODE_SUBAGENT_MODEL"] = subagent
+		env["CLAUDE_CODE_SUBAGENT_MODEL"] = fireworks.WithContextTag(subagent)
 	}
 	_ = ctx
 	return env

@@ -33,6 +33,8 @@ type HarnessContext struct {
 	Verbose              bool
 	Plain                bool
 	Session              string
+	Search               string
+	Refresh              bool
 }
 
 // DefaultContext returns a HarnessContext with sensible defaults.

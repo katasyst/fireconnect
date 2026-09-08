@@ -32,6 +32,7 @@ var globalCommands = map[string]struct{}{
 	"logout": {},
 	"status": {},
 	"help":   {},
+	"model":  {},
 }
 
 var harnessVerbs = map[string]struct{}{
@@ -55,6 +56,7 @@ var knownFlags = []string{
 	"--data-dir", "--api-key", "--base-url", "--azure", "--provider",
 	"--anthropic-api-key", "--model", "--opus", "--sonnet", "--haiku", "--fable",
 	"--subagent", "--db-path", "--force", "--plain", "--verbose", "--session",
+	"--search", "--refresh",
 }
 
 var renamedFlags = map[string]string{
@@ -98,12 +100,12 @@ func ParseCLI(argv []string) (*ParseResult, error) {
 			continue
 		}
 
-		consumed, flagErr := applyGlobalFlag(ctx, arg, next)
+		advance, flagErr := applyGlobalFlag(ctx, arg, next)
 		if flagErr != nil {
 			return nil, fmt.Errorf("%s %s", flagErr.Error(), helpHint(harnessHintToken(positionals)))
 		}
-		if consumed {
-			i++
+		if advance > 0 {
+			i += advance - 1
 			continue
 		}
 		if strings.HasPrefix(arg, "--") {
@@ -148,6 +150,20 @@ func ParseCLI(argv []string) (*ParseResult, error) {
 		}, nil
 	}
 
+	if first == "model" {
+		sub := "list"
+		if len(rest) > 0 {
+			sub = rest[0]
+		}
+		if sub != "list" {
+			return nil, fmt.Errorf("unknown model subcommand: %s. Run: fireconnect model list --help", sub)
+		}
+		return &ParseResult{
+			Context: ctx,
+			Global:  &GlobalCommand{Command: "model-list", Args: rest[1:]},
+		}, nil
+	}
+
 	if _, ok := globalCommands[first]; ok {
 		if len(rest) > 0 {
 			return nil, fmt.Errorf("%s does not accept positional arguments. %s", first, helpHint(""))
@@ -179,141 +195,156 @@ func ParseCLI(argv []string) (*ParseResult, error) {
 	return nil, fmt.Errorf("%s %s", withSuggestion(fmt.Sprintf("unknown command: %s.", first), first), helpHint(""))
 }
 
-func applyGlobalFlag(ctx *HarnessContext, arg, next string) (consumed bool, err error) {
+// applyGlobalFlag returns:
+//
+//	0 — flag not recognized
+//	1 — boolean flag handled (no next-arg consumed)
+//	2 — valued flag handled (next arg consumed, caller must skip it)
+func applyGlobalFlag(ctx *HarnessContext, arg, next string) (int, error) {
 	switch arg {
 	case "--json":
 		ctx.JSON = true
-		return false, nil
+		return 1, nil
 	case "--verbose", "-v":
 		ctx.Verbose = true
-		return false, nil
+		return 1, nil
 	case "--plain":
 		ctx.Plain = true
-		return false, nil
+		return 1, nil
 	case "--azure":
 		ctx.Azure = true
 		ctx.Provider = "azure"
-		return false, nil
+		return 1, nil
 	case "--force":
 		ctx.Force = true
-		return false, nil
+		return 1, nil
+	case "--refresh":
+		ctx.Refresh = true
+		return 1, nil
 	case "--home":
 		value, err := requireValue(arg, next)
 		if err != nil {
-			return false, err
+			return 0, err
 		}
 		ctx.Home = value
-		return true, nil
+		return 2, nil
 	case "--settings-path":
 		value, err := requireValue(arg, next)
 		if err != nil {
-			return false, err
+			return 0, err
 		}
 		ctx.SettingsPath = value
-		return true, nil
+		return 2, nil
 	case "--config-path":
 		value, err := requireValue(arg, next)
 		if err != nil {
-			return false, err
+			return 0, err
 		}
 		ctx.ConfigPath = value
-		return true, nil
+		return 2, nil
 	case "--data-dir":
 		value, err := requireValue(arg, next)
 		if err != nil {
-			return false, err
+			return 0, err
 		}
 		ctx.DataDir = value
-		return true, nil
+		return 2, nil
 	case "--api-key":
 		value, err := requireValue(arg, next)
 		if err != nil {
-			return false, err
+			return 0, err
 		}
 		ctx.APIKey = value
 		ctx.APIKeyFromFlag = true
-		return true, nil
+		return 2, nil
 	case "--base-url":
 		value, err := requireValue(arg, next)
 		if err != nil {
-			return false, err
+			return 0, err
 		}
 		ctx.BaseURL = value
 		ctx.BaseURLFromFlag = true
-		return true, nil
+		return 2, nil
 	case "--provider":
 		value, err := requireValue(arg, next)
 		if err != nil {
-			return false, err
+			return 0, err
 		}
 		ctx.Provider = value
-		return true, nil
+		return 2, nil
 	case "--anthropic-api-key":
 		value, err := requireValue(arg, next)
 		if err != nil {
-			return false, err
+			return 0, err
 		}
 		ctx.AnthropicKey = value
 		ctx.AnthropicKeyFromFlag = true
-		return true, nil
+		return 2, nil
 	case "--model":
 		value, err := requireValue(arg, next)
 		if err != nil {
-			return false, err
+			return 0, err
 		}
 		ctx.Main = value
-		return true, nil
+		return 2, nil
 	case "--opus":
 		value, err := requireValue(arg, next)
 		if err != nil {
-			return false, err
+			return 0, err
 		}
 		ctx.Opus = value
-		return true, nil
+		return 2, nil
 	case "--sonnet":
 		value, err := requireValue(arg, next)
 		if err != nil {
-			return false, err
+			return 0, err
 		}
 		ctx.Sonnet = value
-		return true, nil
+		return 2, nil
 	case "--haiku":
 		value, err := requireValue(arg, next)
 		if err != nil {
-			return false, err
+			return 0, err
 		}
 		ctx.Haiku = value
-		return true, nil
+		return 2, nil
 	case "--fable":
 		value, err := requireValue(arg, next)
 		if err != nil {
-			return false, err
+			return 0, err
 		}
 		ctx.Fable = value
-		return true, nil
+		return 2, nil
 	case "--subagent":
 		value, err := requireValue(arg, next)
 		if err != nil {
-			return false, err
+			return 0, err
 		}
 		ctx.Subagent = value
-		return true, nil
+		return 2, nil
 	case "--db-path":
 		value, err := requireValue(arg, next)
 		if err != nil {
-			return false, err
+			return 0, err
 		}
 		ctx.DBPath = value
-		return true, nil
+		return 2, nil
 	case "--session":
 		value, err := requireValue(arg, next)
 		if err != nil {
-			return false, err
+			return 0, err
 		}
 		ctx.Session = value
-		return true, nil
+		return 2, nil
+	case "--search":
+		value, err := requireValue(arg, next)
+		if err != nil {
+			return 0, err
+		}
+		ctx.Search = value
+		return 2, nil
 	default:
-		return false, nil
+		return 0, nil
 	}
 }
 

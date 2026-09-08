@@ -81,3 +81,24 @@ func DefaultMainModelForKeyType(keyType string) string {
 	_ = keyType
 	return DefaultMainModel
 }
+
+// WithContextTag appends [1m] to a model ID if it doesn't already have it.
+// Claude Code uses this suffix to size the context window correctly.
+// The gateway strips it before sending to the model.
+func WithContextTag(model string) string {
+	if model == "" {
+		return model
+	}
+	if strings.HasSuffix(strings.ToLower(model), "[1m]") {
+		return model
+	}
+	return model + "[1m]"
+}
+
+// StripContextTag removes the [1m] suffix from a model ID.
+func StripContextTag(model string) string {
+	if strings.HasSuffix(strings.ToLower(model), "[1m]") {
+		return model[:len(model)-4]
+	}
+	return model
+}
