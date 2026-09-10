@@ -102,3 +102,38 @@ func StripContextTag(model string) string {
 	}
 	return model
 }
+
+// knownRouterSlugs lists short slugs that are routers (not models).
+// These use "accounts/fireworks/routers/" prefix; everything else uses "models/".
+var knownRouterSlugs = func() map[string]bool {
+	m := map[string]bool{}
+	for _, full := range []string{
+		FirerouterRouterID,
+		GLMLatestRouterID,
+		GLMFastLatestRouterID,
+		KimiFastLatestRouterID,
+		DeepseekFlashLatestRouterID,
+		DeepseekProLatestRouterID,
+	} {
+		parts := strings.Split(full, "/")
+		m[strings.ToLower(parts[len(parts)-1])] = true
+	}
+	return m
+}()
+
+// FullResourcePath converts a short slug to the full Fireworks resource path.
+// Known routers → accounts/fireworks/routers/<slug>
+// Everything else → accounts/fireworks/models/<slug>
+func FullResourcePath(slug string) string {
+	bare := strings.TrimSpace(StripContextTag(slug))
+	if bare == "" {
+		return slug
+	}
+	if strings.HasPrefix(strings.ToLower(bare), "accounts/fireworks/") {
+		return bare
+	}
+	if knownRouterSlugs[strings.ToLower(bare)] {
+		return "accounts/fireworks/routers/" + bare
+	}
+	return "accounts/fireworks/models/" + bare
+}

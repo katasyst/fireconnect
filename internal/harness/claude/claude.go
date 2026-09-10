@@ -283,10 +283,7 @@ func resolveModelMapping(ctx *cli.HarnessContext) map[string]string {
 
 func normalizeRouterRef(model string) string {
 	normalized := fireworks.NormalizeModelID(model)
-	if strings.HasPrefix(normalized, "accounts/fireworks/") {
-		return normalized
-	}
-	return "accounts/fireworks/routers/" + normalized
+	return fireworks.FullResourcePath(normalized)
 }
 
 func buildFireworksEnv(apiKey string, mapping map[string]string, ctx *cli.HarnessContext) map[string]string {
