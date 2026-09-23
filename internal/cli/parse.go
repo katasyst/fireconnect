@@ -28,11 +28,12 @@ type ParseResult struct {
 }
 
 var globalCommands = map[string]struct{}{
-	"login":  {},
-	"logout": {},
-	"status": {},
-	"help":   {},
-	"model":  {},
+	"login":       {},
+	"logout":      {},
+	"status":      {},
+	"help":        {},
+	"model":       {},
+	"azure-login": {},
 }
 
 var harnessVerbs = map[string]struct{}{

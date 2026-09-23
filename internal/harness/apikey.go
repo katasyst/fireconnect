@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/katasyst/fireconnect/internal/cli"
+	"github.com/katasyst/fireconnect/internal/config"
 	"github.com/katasyst/fireconnect/internal/fireworks"
 	"github.com/katasyst/fireconnect/internal/keychain"
 )
@@ -40,4 +41,46 @@ func ResolveFireworksAPIKey(ctx *cli.HarnessContext) (string, error) {
 		return key, nil
 	}
 	return "", fmt.Errorf(missingFireworksAPIKeyMessage)
+}
+
+// ResolveAzureCredentials resolves Azure API key and base URL.
+// Priority: --api-key/--base-url flags > saved config > env vars.
+func ResolveAzureCredentials(ctx *cli.HarnessContext) (apiKey, baseURL string, err error) {
+	if ctx.APIKeyFromFlag && ctx.APIKey != "" {
+		apiKey = strings.TrimSpace(ctx.APIKey)
+	}
+	if ctx.BaseURLFromFlag && ctx.BaseURL != fireworks.FireworksBaseURL {
+		baseURL = strings.TrimSpace(ctx.BaseURL)
+	}
+
+	if apiKey == "" || baseURL == "" {
+		cfg, cfgErr := config.ReadGlobalConfig(ctx.Home)
+		if cfgErr == nil {
+			if apiKey == "" && cfg.Azure.APIKey != "" {
+				apiKey = cfg.Azure.APIKey
+			}
+			if baseURL == "" && cfg.Azure.BaseURL != "" {
+				baseURL = cfg.Azure.BaseURL
+			}
+		}
+	}
+
+	if apiKey == "" {
+		if key := strings.TrimSpace(os.Getenv("AZURE_OPENAI_API_KEY")); key != "" {
+			apiKey = key
+		}
+	}
+	if baseURL == "" {
+		if url := strings.TrimSpace(os.Getenv("AZURE_OPENAI_BASE_URL")); url != "" {
+			baseURL = url
+		}
+	}
+
+	if apiKey == "" {
+		return "", "", fmt.Errorf("No Azure API key found.\n\nSet up:\n  fireconnect azure-login --api-key <key> --base-url <endpoint>")
+	}
+	if baseURL == "" {
+		return "", "", fmt.Errorf("No Azure base URL found.\n\nSet up:\n  fireconnect azure-login --api-key <key> --base-url <endpoint>")
+	}
+	return apiKey, baseURL, nil
 }

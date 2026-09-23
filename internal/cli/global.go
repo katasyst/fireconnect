@@ -30,6 +30,8 @@ func RunGlobalCommand(cmd *GlobalCommand, ctx *HarnessContext) error {
 		return runStatus(ctx)
 	case "model-list":
 		return runModelList(ctx)
+	case "azure-login":
+		return runAzureLogin(ctx)
 	default:
 		return fmt.Errorf("unknown global command: %s", cmd.Command)
 	}
@@ -52,6 +54,25 @@ func runLogin(ctx *HarnessContext) error {
 		return err
 	}
 	ui.Success("Signed in to Fireworks.")
+	return nil
+}
+
+func runAzureLogin(ctx *HarnessContext) error {
+	if !ctx.APIKeyFromFlag || ctx.APIKey == "" {
+		return fmt.Errorf("usage: fireconnect azure-login --api-key <azure-key> --base-url <endpoint>")
+	}
+	if !ctx.BaseURLFromFlag || ctx.BaseURL == "" || ctx.BaseURL == fireworks.FireworksBaseURL {
+		return fmt.Errorf("--base-url is required for Azure login.\nExample: fireconnect azure-login --api-key <key> --base-url https://xxx.services.ai.azure.com/openai/v1")
+	}
+	if err := config.WriteGlobalConfig(ctx.Home, &config.GlobalConfig{
+		Azure: config.AzureConfig{
+			BaseURL: ctx.BaseURL,
+			APIKey:  ctx.APIKey,
+		},
+	}); err != nil {
+		return err
+	}
+	ui.Success(fmt.Sprintf("Azure credentials saved. Endpoint: %s", ctx.BaseURL))
 	return nil
 }
 
@@ -91,11 +112,19 @@ func runStatus(ctx *HarnessContext) error {
 
 	if hasKey {
 		ui.Success("Signed in to Fireworks.")
-		return nil
+	} else {
+		ui.Warn("Fireworks: not signed in.")
+		ui.Note("Run: fireconnect login --api-key <key>")
 	}
-	ui.Warn("Not signed in.")
-	ui.Note("Run: fireconnect login --api-key <key>")
-	return fmt.Errorf("not signed in")
+
+	if cfg.Azure.APIKey != "" && cfg.Azure.BaseURL != "" {
+		ui.Success(fmt.Sprintf("Azure configured. Endpoint: %s", cfg.Azure.BaseURL))
+	}
+
+	if !hasKey && cfg.Azure.APIKey == "" {
+		return fmt.Errorf("not signed in")
+	}
+	return nil
 }
 
 func runModelList(ctx *HarnessContext) error {
@@ -170,24 +199,33 @@ Global options:
   --version            Show version
 `, topic, fireworks.DefaultMainModel)
 	default:
-		fmt.Print(`FireConnect — use Fireworks models in AI coding tools.
+		fmt.Print(`FireConnect — use Fireworks or Azure models in AI coding tools.
 
 Usage: fireconnect <command> [options]
 
 Get started:
   login                Sign in to Fireworks
+  azure-login          Save Azure OpenAI credentials
   claude               Route Claude Code through Fireworks
 
 Harnesses:
-  claude               Claude Code
-  cursor               Cursor IDE
-  codex                Codex CLI & ChatGPT app
+  claude               Claude Code (Fireworks only)
+  cursor               Cursor IDE (Fireworks only)
+  codex                Codex CLI & ChatGPT app (Fireworks or Azure)
   chatgpt              Alias for codex
 
 Per harness:
-  <harness> on         Enable Fireworks routing (default)
+  <harness> on         Enable routing (Fireworks by default, --azure for Azure)
   <harness> off        Restore previous settings
   <harness> status     Show provider, auth, and models
+
+Azure:
+  azure-login          Save Azure credentials once
+    --api-key <key>    Azure API key
+    --base-url <url>   Azure endpoint (e.g. https://xxx.services.ai.azure.com/openai/v1)
+
+  codex on --azure     Route Codex through Azure OpenAI
+    --model <id>       Deployment name (required for Azure)
 
 Other:
   model list           Browse Fireworks model catalog
@@ -197,12 +235,12 @@ Other:
 
 Global options:
   --home <path>        Override HOME directory
-  --api-key <key>      Fireworks API key
-  --base-url <url>     Fireworks inference base URL
-  --model <id>         Primary model
+  --api-key <key>      API key (Fireworks or Azure depending on context)
+  --base-url <url>     Inference endpoint URL
+  --model <id>         Primary model / deployment name
   --json               Machine-readable JSON output
   --force              Force writes while IDE is running
-  --azure              Use Azure/Foundry provider
+  --azure              Use Azure OpenAI provider (Codex only)
   --search <query>     Filter model list by name or ID
   --refresh            Force-refresh cached model catalog
   --version            Show version

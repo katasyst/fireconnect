@@ -40,11 +40,6 @@ func (h *codexHarness) On(ctx *cli.HarnessContext) error {
 		return err
 	}
 
-	apiKey, err := harness.ResolveFireworksAPIKey(ctx)
-	if err != nil {
-		return err
-	}
-
 	if harness.IsChatGPTRunning() && !ctx.Force {
 		return fmt.Errorf("ChatGPT app is running. Quit ChatGPT first.")
 	}
@@ -62,6 +57,23 @@ func (h *codexHarness) On(ctx *cli.HarnessContext) error {
 		return err
 	}
 
+	raw := ""
+	if existed, _ := snapshot["existed"].(bool); existed {
+		raw, _ = snapshot["raw"].(string)
+	}
+
+	if ctx.Azure {
+		return h.onAzure(ctx, cfgPath, raw)
+	}
+	return h.onFireworks(ctx, cfgPath, raw)
+}
+
+func (h *codexHarness) onFireworks(ctx *cli.HarnessContext, cfgPath, raw string) error {
+	apiKey, err := harness.ResolveFireworksAPIKey(ctx)
+	if err != nil {
+		return err
+	}
+
 	model := ctx.Main
 	if model == "" {
 		model = fireworks.DefaultMainModel
@@ -71,11 +83,6 @@ func (h *codexHarness) On(ctx *cli.HarnessContext) error {
 	apiKeyValue := envKeyRef
 	if ctx.APIKeyFromFlag {
 		apiKeyValue = apiKey
-	}
-
-	raw := ""
-	if existed, _ := snapshot["existed"].(bool); existed {
-		raw, _ = snapshot["raw"].(string)
 	}
 
 	nextRaw := patchCodexConfig(raw, model, apiKeyValue)
@@ -88,6 +95,32 @@ func (h *codexHarness) On(ctx *cli.HarnessContext) error {
 	}
 
 	ui.PrintHarnessConnected(h.Label(), model)
+	ui.PrintRestartHint("Quit & reopen the ChatGPT app for the change to take effect.")
+	return nil
+}
+
+func (h *codexHarness) onAzure(ctx *cli.HarnessContext, cfgPath, raw string) error {
+	azureKey, azureURL, err := harness.ResolveAzureCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	model := ctx.Main
+	if model == "" {
+		return fmt.Errorf("--model is required for Azure mode.\nExample: fireconnect codex on --azure --model gpt-6-luna")
+	}
+
+	nextRaw := patchCodexConfigAzure(raw, model, azureKey, azureURL)
+	if err := fileutil.WriteFileAtomic(cfgPath, []byte(nextRaw), 0o600); err != nil {
+		return err
+	}
+
+	if err := config.SetHarnessEnabled(ctx.Home, string(h.ID()), true, "azure"); err != nil {
+		return err
+	}
+
+	ui.Info(fmt.Sprintf("Codex → Azure · %s", model))
+	ui.Note(fmt.Sprintf("  endpoint: %s", azureURL))
 	ui.PrintRestartHint("Quit & reopen the ChatGPT app for the change to take effect.")
 	return nil
 }
@@ -153,12 +186,22 @@ func (h *codexHarness) Status(ctx *cli.HarnessContext) error {
 			if m, ok := doc["model"].(string); ok {
 				model = m
 			}
-			if table, ok := doc[providerSection].(map[string]interface{}); ok {
+			if table, ok := nestedTable(doc, providerSection); ok {
 				if u, ok := table["base_url"].(string); ok {
 					baseURL = u
 				}
 			}
-		} else if _, ok := doc[providerSection]; ok {
+		} else if hasAzureProvider(doc) {
+			provider = "azure"
+			if m, ok := doc["model"].(string); ok {
+				model = m
+			}
+			if table, ok := nestedTable(doc, azureProviderSection); ok {
+				if u, ok := table["base_url"].(string); ok {
+					baseURL = u
+				}
+			}
+		} else if _, ok := nestedTable(doc, providerSection); ok {
 			provider = "custom"
 		}
 	}
@@ -255,8 +298,23 @@ func parseTomlDoc(raw string) map[string]interface{} {
 	return out
 }
 
+// nestedTable resolves a dotted TOML key like "provider.fireworks-model-catalog"
+// through the nested map structure that BurntSushi/toml produces.
+func nestedTable(doc map[string]interface{}, dottedKey string) (map[string]interface{}, bool) {
+	parts := strings.SplitN(dottedKey, ".", 2)
+	if len(parts) == 1 {
+		table, ok := doc[parts[0]].(map[string]interface{})
+		return table, ok
+	}
+	child, ok := doc[parts[0]].(map[string]interface{})
+	if !ok {
+		return nil, false
+	}
+	return nestedTable(child, parts[1])
+}
+
 func hasFireworksProvider(doc map[string]interface{}) bool {
-	table, ok := doc[providerSection].(map[string]interface{})
+	table, ok := nestedTable(doc, providerSection)
 	if !ok {
 		return false
 	}
@@ -264,14 +322,25 @@ func hasFireworksProvider(doc map[string]interface{}) bool {
 	return baseURL == fireworks.FireworksBaseURL
 }
 
+func hasAzureProvider(doc map[string]interface{}) bool {
+	_, ok := nestedTable(doc, azureProviderSection)
+	return ok
+}
+
+const (
+	azureProviderSection = "provider.azure-openai"
+	azureProviderHeader  = "[provider.azure-openai]"
+)
+
 var (
-	rootModelLine     = regexp.MustCompile(`(?m)^model\s*=.*$`)
-	rootWebSearchLine = regexp.MustCompile(`(?m)^web_search\s*=.*$`)
-	providerTableLine = regexp.MustCompile(`(?m)^\[provider\.fireworks-model-catalog\]\s*$`)
+	rootModelLine      = regexp.MustCompile(`(?m)^model\s*=.*$`)
+	rootWebSearchLine  = regexp.MustCompile(`(?m)^web_search\s*=.*$`)
+	providerTableLine  = regexp.MustCompile(`(?m)^\[provider\.fireworks-model-catalog\]\s*$`)
+	azureTableLine     = regexp.MustCompile(`(?m)^\[provider\.azure-openai\]\s*$`)
 )
 
 func patchCodexConfig(raw, model, apiKeyValue string) string {
-	stripped := stripFireconnectSection(raw)
+	stripped := stripProviderSections(raw)
 	stripped = rootModelLine.ReplaceAllString(stripped, "")
 	stripped = rootWebSearchLine.ReplaceAllString(stripped, "")
 
@@ -293,7 +362,30 @@ func patchCodexConfig(raw, model, apiKeyValue string) string {
 	return block + stripped + "\n"
 }
 
-func stripFireconnectSection(raw string) string {
+func patchCodexConfigAzure(raw, model, apiKey, baseURL string) string {
+	stripped := stripProviderSections(raw)
+	stripped = rootModelLine.ReplaceAllString(stripped, "")
+	stripped = rootWebSearchLine.ReplaceAllString(stripped, "")
+
+	block := strings.Join([]string{
+		fmt.Sprintf(`model = %q`, model),
+		`web_search = "disabled"`,
+		"",
+		azureProviderHeader,
+		`name = "azure-openai"`,
+		fmt.Sprintf(`base_url = %q`, baseURL),
+		fmt.Sprintf(`api_key = %q`, apiKey),
+		"",
+	}, "\n")
+
+	stripped = strings.TrimSpace(stripped)
+	if stripped == "" {
+		return block
+	}
+	return block + stripped + "\n"
+}
+
+func stripProviderSections(raw string) string {
 	lines := strings.Split(raw, "\n")
 	out := make([]string, 0, len(lines))
 	skipping := false
@@ -303,7 +395,7 @@ func stripFireconnectSection(raw string) string {
 		if rootModelLine.MatchString(trimmed) {
 			continue
 		}
-		if providerTableLine.MatchString(trimmed) {
+		if providerTableLine.MatchString(trimmed) || azureTableLine.MatchString(trimmed) {
 			skipping = true
 			continue
 		}

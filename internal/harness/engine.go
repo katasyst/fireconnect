@@ -55,7 +55,10 @@ func validateHarnessOn(h Harness, ctx *cli.HarnessContext) error {
 		return fmt.Errorf("--provider is configure-only. For a one-off harness switch, use --azure")
 	}
 	if ctx.Azure && h.ID() == Claude {
-		return fmt.Errorf("Claude does not support Azure mode; omit --azure to use the Fireworks gateway")
+		return fmt.Errorf("Claude Code uses Anthropic API format; Azure OpenAI is incompatible.\nUse Fireworks (which translates for you) or Microsoft Foundry (Azure-native Claude).")
+	}
+	if ctx.Azure && h.ID() == Cursor {
+		return fmt.Errorf("Cursor Azure support not yet implemented. Use Fireworks for now.")
 	}
 	if ctx.Force && h.ID() != Cursor && h.ID() != Codex {
 		return fmt.Errorf("--force is only supported for Cursor and Codex")
