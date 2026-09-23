@@ -20,10 +20,11 @@ import (
 )
 
 const (
-	providerSection   = "provider.fireworks-model-catalog"
-	providerHeader    = "[provider.fireworks-model-catalog]"
-	envKeyRef         = "{env:FIREWORKS_API_KEY}"
-	backupFileName    = "provider-backup.json"
+	providerSection      = "model_providers.fireworks"
+	providerHeader       = "[model_providers.fireworks]"
+	azureProviderSection = "model_providers.azure"
+	azureProviderHeader  = "[model_providers.azure]"
+	backupFileName       = "provider-backup.json"
 )
 
 type codexHarness struct{}
@@ -80,12 +81,7 @@ func (h *codexHarness) onFireworks(ctx *cli.HarnessContext, cfgPath, raw string)
 	}
 	model = fireworks.ShortFireworksModelRef(fireworks.NormalizeModelID(model))
 
-	apiKeyValue := envKeyRef
-	if ctx.APIKeyFromFlag {
-		apiKeyValue = apiKey
-	}
-
-	nextRaw := patchCodexConfig(raw, model, apiKeyValue)
+	nextRaw := patchCodexConfig(raw, model, apiKey)
 	if err := fileutil.WriteFileAtomic(cfgPath, []byte(nextRaw), 0o600); err != nil {
 		return err
 	}
@@ -327,31 +323,29 @@ func hasAzureProvider(doc map[string]interface{}) bool {
 	return ok
 }
 
-const (
-	azureProviderSection = "provider.azure-openai"
-	azureProviderHeader  = "[provider.azure-openai]"
-)
-
 var (
-	rootModelLine      = regexp.MustCompile(`(?m)^model\s*=.*$`)
-	rootWebSearchLine  = regexp.MustCompile(`(?m)^web_search\s*=.*$`)
-	providerTableLine  = regexp.MustCompile(`(?m)^\[provider\.fireworks-model-catalog\]\s*$`)
-	azureTableLine     = regexp.MustCompile(`(?m)^\[provider\.azure-openai\]\s*$`)
+	rootModelLine         = regexp.MustCompile(`(?m)^model\s*=.*$`)
+	rootModelProviderLine = regexp.MustCompile(`(?m)^model_provider\s*=.*$`)
+	rootWebSearchLine     = regexp.MustCompile(`(?m)^web_search\s*=.*$`)
+	providerTableLine     = regexp.MustCompile(`(?m)^\[model_providers\.fireworks\]\s*$`)
+	azureTableLine        = regexp.MustCompile(`(?m)^\[model_providers\.azure\]\s*$`)
+	legacyProviderLine    = regexp.MustCompile(`(?m)^\[provider\.[^\]]+\]\s*$`)
 )
 
 func patchCodexConfig(raw, model, apiKeyValue string) string {
 	stripped := stripProviderSections(raw)
-	stripped = rootModelLine.ReplaceAllString(stripped, "")
-	stripped = rootWebSearchLine.ReplaceAllString(stripped, "")
+	stripped = stripRootKeys(stripped)
 
 	block := strings.Join([]string{
 		fmt.Sprintf(`model = %q`, model),
+		`model_provider = "fireworks"`,
 		`web_search = "disabled"`,
 		"",
 		providerHeader,
-		`name = "fireworks-model-catalog"`,
-		fmt.Sprintf(`base_url = %q`, fireworks.FireworksBaseURL),
-		fmt.Sprintf(`api_key = %q`, apiKeyValue),
+		`name = "Fireworks"`,
+		fmt.Sprintf(`base_url = %q`, fireworks.FireworksBaseURL+"/v1"),
+		fmt.Sprintf(`env_key = "FIREWORKS_API_KEY"`),
+		fmt.Sprintf(`experimental_bearer_token = %q`, apiKeyValue),
 		"",
 	}, "\n")
 
@@ -365,16 +359,16 @@ func patchCodexConfig(raw, model, apiKeyValue string) string {
 func patchCodexConfigAzure(raw, model, apiKey, baseURL string) string {
 	stripped := stripProviderSections(raw)
 	stripped = rootModelLine.ReplaceAllString(stripped, "")
-	stripped = rootWebSearchLine.ReplaceAllString(stripped, "")
+	stripped = rootModelProviderLine.ReplaceAllString(stripped, "")
 
 	block := strings.Join([]string{
 		fmt.Sprintf(`model = %q`, model),
-		`web_search = "disabled"`,
+		`model_provider = "azure"`,
 		"",
 		azureProviderHeader,
-		`name = "azure-openai"`,
+		`name = "Azure OpenAI"`,
 		fmt.Sprintf(`base_url = %q`, baseURL),
-		fmt.Sprintf(`api_key = %q`, apiKey),
+		fmt.Sprintf(`experimental_bearer_token = %q`, apiKey),
 		"",
 	}, "\n")
 
@@ -385,6 +379,13 @@ func patchCodexConfigAzure(raw, model, apiKey, baseURL string) string {
 	return block + stripped + "\n"
 }
 
+func stripRootKeys(raw string) string {
+	raw = rootModelLine.ReplaceAllString(raw, "")
+	raw = rootModelProviderLine.ReplaceAllString(raw, "")
+	raw = rootWebSearchLine.ReplaceAllString(raw, "")
+	return raw
+}
+
 func stripProviderSections(raw string) string {
 	lines := strings.Split(raw, "\n")
 	out := make([]string, 0, len(lines))
@@ -392,10 +393,9 @@ func stripProviderSections(raw string) string {
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if rootModelLine.MatchString(trimmed) {
-			continue
-		}
-		if providerTableLine.MatchString(trimmed) || azureTableLine.MatchString(trimmed) {
+		if providerTableLine.MatchString(trimmed) ||
+			azureTableLine.MatchString(trimmed) ||
+			legacyProviderLine.MatchString(trimmed) {
 			skipping = true
 			continue
 		}
